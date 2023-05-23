@@ -1,0 +1,78 @@
+version: "3"
+
+networks:
+  inno-school-network:
+    driver: bridge
+
+services:
+
+  backend:
+    container_name: ${PROJECT_NAME}-backend
+    hostname: ${PROJECT_NAME}-backend
+    build:
+      context: ./
+      dockerfile: .docker/dev/backend/Dockerfile
+    env_file:
+      - .env
+    ports:
+      - ${PORT}:8000
+    volumes:
+      - ./:/home/app/backend
+      - static_volume:/home/app/backend/static
+      - media_volume:/home/app/backend/media
+    security_opt:
+      - seccomp:unconfined
+    tty: true
+    restart: unless-stopped
+    networks:
+      - inno-school-network
+    depends_on:
+      - db
+
+  db:
+    container_name: ${PROJECT_NAME}-db
+    hostname: ${PROJECT_NAME}-db-host
+    image: postgis/postgis:14-3.3
+    env_file:
+      - .docker/dev/postgresql/config.ini
+    ports:
+      - ${POSTGRESQL_PORT}:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    networks:
+      - inno-school-network
+    tty: true
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_HOST=${DB_HOST}
+      - POSTGRES_PORT=${DB_PORT}
+
+  nginx:
+    container_name: ${PROJECT_NAME}-nginx
+    image: nginx:stable-alpine
+    ports:
+      - ${NGINX_PORT}:${NGINX_PORT_DOCKER}
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+    restart: unless-stopped
+    volumes:
+      - static_volume:/home/app/backend/static
+      - media_volume:/home/app/backend/media
+      - ./.docker/dev/nginx:/etc/nginx/conf.d
+
+  cloudflared:
+    image: erisamoe/cloudflared
+    restart: unless-stopped
+    command: tunnel run
+    env_file:
+      - .docker/dev/cloudflare/config.ini
+    depends_on:
+      - nginx
+
+volumes:
+  static_volume:
+  media_volume:
+  postgres_data:
+    driver: local
